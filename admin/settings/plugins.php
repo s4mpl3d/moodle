@@ -616,6 +616,9 @@ if ($hassiteconfig) {
         }
     });
     $temp->add($searchengineselect);
+    $temp->add(new admin_setting_configcheckbox('ignoreglobalsearchcourse',
+        new lang_string('ignoreglobalsearchcourse', 'admin'), new lang_string('ignoreglobalsearchcourse_desc', 'admin'),
+        0));
     $temp->add(new admin_setting_heading('searchoptionsheading', new lang_string('searchoptions', 'admin'), ''));
     $temp->add(new admin_setting_configcheckbox('searchindexwhendisabled',
             new lang_string('searchindexwhendisabled', 'admin'), new lang_string('searchindexwhendisabled_desc', 'admin'),

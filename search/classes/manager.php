@@ -264,6 +264,16 @@ class manager {
     }
 
     /**
+     * Returns whether global search is enabled on courses or not.
+     *
+     * @return bool
+     */
+    public static function is_ignore_global_search_course_enabled() {
+        global $CFG;
+        return !empty($CFG->ignoreglobalsearchcourse);
+    }
+
+    /**
      * Tests if global search is configured to be equivalent to the front page course search.
      *
      * @return bool
@@ -301,7 +311,7 @@ class manager {
      * @return moodle_url
      */
     public static function get_course_search_url() {
-        if (self::can_replace_course_search()) {
+        if (self::can_replace_course_search() && ! self::is_ignore_global_search_course_enabled()) {
             $searchurl = '/search/index.php';
         } else {
             $searchurl = '/course/search.php';
