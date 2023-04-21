@@ -24,6 +24,8 @@ use core_reportbuilder\local\entities\user;
 use core_reportbuilder\local\filters\boolean_select;
 use core_reportbuilder\local\helpers\database;
 use core_tag\reportbuilder\local\entities\tag;
+use core_reportbuilder\manager;
+use core_reportbuilder\local\helpers\report;
 
 /**
  * Users datasource
@@ -117,6 +119,17 @@ class users extends datasource {
     public function get_default_condition_values(): array {
         return [
             'user:suspended_operator' => boolean_select::NOT_CHECKED,
+        ];
+    }
+
+    /**
+     * Return the default sorting that will be added to the report once it is created
+     *
+     * @return array|int[]
+     */
+    public function get_default_column_sorting(): array {
+        return [
+            'user:fullname' => SORT_ASC,
         ];
     }
 }

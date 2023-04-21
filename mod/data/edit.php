@@ -74,7 +74,7 @@ if (isguestuser()) {
 }
 
 /// Can't use this if there are no fields
-if (has_capability('mod/data:managetemplates', $context)) {
+if ($manager->can_manage_templates()) {
     if (!$manager->has_fields()) {
         redirect($CFG->wwwroot.'/mod/data/field.php?d='.$data->id);  // Redirect to field entry.
     }
@@ -121,6 +121,7 @@ if ($rid) {
     $PAGE->navbar->add(get_string('editentry', 'data'));
 }
 
+$PAGE->add_body_class('mediumwidth');
 $PAGE->set_title($data->name);
 $PAGE->set_heading($course->fullname);
 $PAGE->force_settings_menu(true);
@@ -199,13 +200,13 @@ if (empty($redirectbackto)) {
 $actionbuttons = html_writer::link(
     $redirectbackto,
     get_string('cancel'),
-    ['class' => 'btn btn-secondary', 'role' => 'button']
+    ['class' => 'btn btn-secondary mx-1', 'role' => 'button']
 );
 $actionbuttons .= html_writer::empty_tag('input', [
     'type' => 'submit',
     'name' => 'saveandview',
     'value' => get_string('save'),
-    'class' => 'btn btn-primary ml-2'
+    'class' => 'btn btn-primary mx-1'
 ]);
 
 if (!$rid && ((!$data->maxentries) ||
@@ -213,11 +214,13 @@ if (!$rid && ((!$data->maxentries) ||
     (data_numentries($data) < ($data->maxentries - 1)))) {
     $actionbuttons .= html_writer::empty_tag('input', [
         'type' => 'submit', 'name' => 'saveandadd',
-        'value' => get_string('saveandadd', 'data'), 'class' => 'btn btn-primary ml-2'
+        'value' => get_string('saveandadd', 'data'), 'class' => 'btn btn-primary mx-1'
     ]);
 }
 
-echo html_writer::div($actionbuttons, 'mdl-align mt-2');
+$stickyfooter = new core\output\sticky_footer($actionbuttons);
+echo $OUTPUT->render($stickyfooter);
+
 echo $OUTPUT->box_end();
 echo '</div></form>';
 

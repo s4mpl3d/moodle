@@ -400,35 +400,68 @@ class data_field_base {     // Base class for Database Field Types (see field/*/
         if (empty($this->field)) {   // No field has been defined yet, try and make one
             $this->define_default_field();
         }
+
+        // Throw an exception if field type doen't exist. Anyway user should never access to edit a field with an unknown fieldtype.
+        if ($this->type === 'unknown') {
+            throw new \moodle_exception(get_string('missingfieldtype', 'data', (object)['name' => $this->field->name]));
+        }
+
         echo $OUTPUT->box_start('generalbox boxaligncenter boxwidthwide');
 
         echo '<form id="editfield" action="'.$CFG->wwwroot.'/mod/data/field.php" method="post">'."\n";
         echo '<input type="hidden" name="d" value="'.$this->data->id.'" />'."\n";
         if (empty($this->field->id)) {
             echo '<input type="hidden" name="mode" value="add" />'."\n";
-            $savebutton = get_string('add');
         } else {
             echo '<input type="hidden" name="fid" value="'.$this->field->id.'" />'."\n";
             echo '<input type="hidden" name="mode" value="update" />'."\n";
-            $savebutton = get_string('savechanges');
         }
         echo '<input type="hidden" name="type" value="'.$this->type.'" />'."\n";
         echo '<input name="sesskey" value="'.sesskey().'" type="hidden" />'."\n";
 
         echo $OUTPUT->heading($this->name(), 3);
 
-        require_once($CFG->dirroot.'/mod/data/field/'.$this->type.'/mod.html');
+        $filepath = $CFG->dirroot.'/mod/data/field/'.$this->type.'/mod.html';
 
-        echo html_writer::start_div('mt-3');
-        echo html_writer::tag('input', null, array('type' => 'submit', 'value' => $savebutton,
-            'class' => 'btn btn-primary'));
-        echo html_writer::tag('input', null, array('type' => 'submit', 'name' => 'cancel',
-            'value' => get_string('cancel'), 'class' => 'btn btn-secondary ml-2'));
-        echo html_writer::end_div();
+        if (!file_exists($filepath)) {
+            throw new \moodle_exception(get_string('missingfieldtype', 'data', (object)['name' => $this->field->name]));
+        } else {
+            require_once($filepath);
+        }
+
+        $actionbuttons = html_writer::start_div();
+        $actionbuttons .= html_writer::tag('input', null, [
+            'type' => 'submit',
+            'name' => 'cancel',
+            'value' => get_string('cancel'),
+            'class' => 'btn btn-secondary mx-1'
+        ]);
+        $actionbuttons .= html_writer::tag('input', null, [
+            'type' => 'submit',
+            'value' => get_string('save'),
+            'class' => 'btn btn-primary mx-1'
+        ]);
+        $actionbuttons .= html_writer::end_div();
+
+        $stickyfooter = new core\output\sticky_footer($actionbuttons);
+        echo $OUTPUT->render($stickyfooter);
 
         echo '</form>';
 
         echo $OUTPUT->box_end();
+    }
+
+    /**
+     * Validates params of fieldinput data. Overwrite to validate fieldtype specific data.
+     *
+     * You are expected to return an array like ['paramname' => 'Error message for paramname param'] if there is an error,
+     * return an empty array if everything is fine.
+     *
+     * @param stdClass $fieldinput The field input data to check
+     * @return array $errors if empty validation was fine, otherwise contains one or more error messages
+     */
+    public function validate(stdClass $fieldinput): array {
+        return [];
     }
 
     /**
@@ -586,12 +619,7 @@ class data_field_base {     // Base class for Database Field Types (see field/*/
     function image() {
         global $OUTPUT;
 
-        $params = array('d'=>$this->data->id, 'fid'=>$this->field->id, 'mode'=>'display', 'sesskey'=>sesskey());
-        $link = new moodle_url('/mod/data/field.php', $params);
-        $str = '<a href="'.$link->out().'">';
-        $str .= $OUTPUT->pix_icon('field/' . $this->type, $this->type, 'data');
-        $str .= '</a>';
-        return $str;
+        return $OUTPUT->pix_icon('field/' . $this->type, $this->type, 'data');
     }
 
     /**
@@ -798,34 +826,35 @@ function data_generate_tag_form($recordid = false, $selected = []) {
 function data_replace_field_in_templates($data, $searchfieldname, $newfieldname) {
     global $DB;
 
-    if (!empty($newfieldname)) {
-        $prestring = '[[';
-        $poststring = ']]';
-        $idpart = '#id';
-
-    } else {
-        $prestring = '';
-        $poststring = '';
-        $idpart = '';
+    $newdata = (object)['id' => $data->id];
+    $update = false;
+    $templates = ['listtemplate', 'singletemplate', 'asearchtemplate', 'addtemplate', 'rsstemplate'];
+    foreach ($templates as $templatename) {
+        if (empty($data->$templatename)) {
+            continue;
+        }
+        $search = [
+            '[[' . $searchfieldname . ']]',
+            '[[' . $searchfieldname . '#id]]',
+            '[[' . $searchfieldname . '#name]]',
+            '[[' . $searchfieldname . '#description]]',
+        ];
+        if (empty($newfieldname)) {
+            $replace = ['', '', '', ''];
+        } else {
+            $replace = [
+                '[[' . $newfieldname . ']]',
+                '[[' . $newfieldname . '#id]]',
+                '[[' . $newfieldname . '#name]]',
+                '[[' . $newfieldname . '#description]]',
+            ];
+        }
+        $newdata->{$templatename} = str_ireplace($search, $replace, $data->{$templatename} ?? '');
+        $update = true;
     }
-
-    $newdata = new stdClass();
-    $newdata->id = $data->id;
-    $newdata->singletemplate = str_ireplace('[['.$searchfieldname.']]',
-            $prestring.$newfieldname.$poststring, $data->singletemplate);
-
-    $newdata->listtemplate = str_ireplace('[['.$searchfieldname.']]',
-            $prestring.$newfieldname.$poststring, $data->listtemplate);
-
-    $newdata->addtemplate = str_ireplace('[['.$searchfieldname.']]',
-            $prestring.$newfieldname.$poststring, $data->addtemplate);
-
-    $newdata->addtemplate = str_ireplace('[['.$searchfieldname.'#id]]',
-            $prestring.$newfieldname.$idpart.$poststring, $data->addtemplate);
-
-    $newdata->rsstemplate = str_ireplace('[['.$searchfieldname.']]',
-            $prestring.$newfieldname.$poststring, $data->rsstemplate);
-
+    if (!$update) {
+        return true;
+    }
     return $DB->update_record('data', $newdata);
 }
 
@@ -836,29 +865,36 @@ function data_replace_field_in_templates($data, $searchfieldname, $newfieldname)
  * @global object
  * @param object $data
  * @param string $newfieldname
+ * @return bool if the field has been added or not
  */
-function data_append_new_field_to_templates($data, $newfieldname) {
-    global $DB;
+function data_append_new_field_to_templates($data, $newfieldname): bool {
+    global $DB, $OUTPUT;
 
-    $newdata = new stdClass();
-    $newdata->id = $data->id;
-    $change = false;
-
-    if (!empty($data->singletemplate)) {
-        $newdata->singletemplate = $data->singletemplate.' [[' . $newfieldname .']]';
-        $change = true;
+    $newdata = (object)['id' => $data->id];
+    $update = false;
+    $templates = ['singletemplate', 'addtemplate', 'rsstemplate'];
+    foreach ($templates as $templatename) {
+        if (empty($data->$templatename)
+            || strpos($data->$templatename, "[[$newfieldname]]") !== false
+            || strpos($data->$templatename, "##otherfields##") !== false
+        ) {
+            continue;
+        }
+        $newdata->$templatename = $data->$templatename;
+        $fields = [[
+            'fieldname' => '[[' . $newfieldname . '#name]]',
+            'fieldcontent' => '[[' . $newfieldname . ']]',
+        ]];
+        $newdata->$templatename .= $OUTPUT->render_from_template(
+            'mod_data/fields_otherfields',
+            ['fields' => $fields, 'classes' => 'added_field']
+        );
+        $update = true;
     }
-    if (!empty($data->addtemplate)) {
-        $newdata->addtemplate = $data->addtemplate.' [[' . $newfieldname . ']]';
-        $change = true;
+    if (!$update) {
+        return false;
     }
-    if (!empty($data->rsstemplate)) {
-        $newdata->rsstemplate = $data->singletemplate.' [[' . $newfieldname . ']]';
-        $change = true;
-    }
-    if ($change) {
-        $DB->update_record('data', $newdata);
-    }
+    return $DB->update_record('data', $newdata);
 }
 
 
@@ -916,7 +952,12 @@ function data_get_field_from_id($fieldid, $data){
 function data_get_field_new($type, $data) {
     global $CFG;
 
-    require_once($CFG->dirroot.'/mod/data/field/'.$type.'/field.class.php');
+    $filepath = $CFG->dirroot.'/mod/data/field/'.$type.'/field.class.php';
+    // It should never access this method if the subfield class doesn't exist.
+    if (!file_exists($filepath)) {
+        throw new \moodle_exception('invalidfieldtype', 'data');
+    }
+    require_once($filepath);
     $newfield = 'data_field_'.$type;
     $newfield = new $newfield(0, $data);
     return $newfield;
@@ -928,20 +969,24 @@ function data_get_field_new($type, $data) {
  * input: $param $field - record from db
  *
  * @global object
- * @param object $field
- * @param object $data
- * @param object $cm
- * @return data_field_base
+ * @param stdClass $field the field record
+ * @param stdClass $data the data instance
+ * @param stdClass|null $cm optional course module data
+ * @return data_field_base the field object instance or data_field_base if unkown type
  */
 function data_get_field($field, $data, $cm=null) {
     global $CFG;
-
-    if ($field) {
-        require_once('field/'.$field->type.'/field.class.php');
-        $newfield = 'data_field_'.$field->type;
-        $newfield = new $newfield($field, $data, $cm);
-        return $newfield;
+    if (!isset($field->type)) {
+        return new data_field_base($field);
     }
+    $filepath = $CFG->dirroot.'/mod/data/field/'.$field->type.'/field.class.php';
+    if (!file_exists($filepath)) {
+        return new data_field_base($field);
+    }
+    require_once($filepath);
+    $newfield = 'data_field_'.$field->type;
+    $newfield = new $newfield($field, $data, $cm);
+    return $newfield;
 }
 
 
@@ -1121,7 +1166,9 @@ function data_update_instance($data) {
     require_once($CFG->dirroot.'/mod/data/locallib.php');
 
     $data->timemodified = time();
-    $data->id           = $data->instance;
+    if (!empty($data->instance)) {
+        $data->id = $data->instance;
+    }
 
     if (empty($data->assessed)) {
         $data->assessed = 0;
@@ -1166,22 +1213,12 @@ function data_delete_instance($id) {    // takes the dataid
     $cm = get_coursemodule_from_instance('data', $data->id);
     $context = context_module::instance($cm->id);
 
-/// Delete all the associated information
-
-    // files
-    $fs = get_file_storage();
-    $fs->delete_area_files($context->id, 'mod_data');
-
-    // get all the records in this data
-    $sql = "SELECT r.id
-              FROM {data_records} r
-             WHERE r.dataid = ?";
-
-    $DB->delete_records_select('data_content', "recordid IN ($sql)", array($id));
-
-    // delete all the records and fields
-    $DB->delete_records('data_records', array('dataid'=>$id));
-    $DB->delete_records('data_fields', array('dataid'=>$id));
+    // Delete all information related to fields.
+    $fields = $DB->get_records('data_fields', ['dataid' => $id]);
+    foreach ($fields as $field) {
+        $todelete = data_get_field($field, $data, $cm);
+        $todelete->delete_field();
+    }
 
     // Remove old calendar events.
     $events = $DB->get_records('event', array('modulename' => 'data', 'instance' => $id));
@@ -1634,12 +1671,13 @@ function mod_data_rating_can_see_item_ratings($params) {
  * @return void
  */
 function data_print_preference_form($data, $perpage, $search, $sort='', $order='ASC', $search_array = '', $advanced = 0, $mode= ''){
-    global $CFG, $DB, $PAGE, $OUTPUT;
+    global $DB, $PAGE, $OUTPUT;
 
     $cm = get_coursemodule_from_instance('data', $data->id);
     $context = context_module::instance($cm->id);
-    echo '<div class="datapreferences mb-3">';
+    echo '<div class="datapreferences my-5">';
     echo '<form id="options" action="view.php" method="get">';
+    echo '<div class="d-flex">';
     echo '<div>';
     echo '<input type="hidden" name="d" value="'.$data->id.'" />';
     if ($mode =='asearch') {
@@ -1719,7 +1757,12 @@ function data_print_preference_form($data, $perpage, $search, $sort='', $order='
     echo '&nbsp;<input type="checkbox" id="advancedcheckbox" name="advanced" value="1" ' . $checked . ' ' .
          'onchange="showHideAdvSearch(this.checked);" class="mx-1" />' .
          '<label for="advancedcheckbox">' . get_string('advancedsearch', 'data') . '</label>';
+    echo '</div>';
+    echo '<div id="advsearch-save-sec" class="ml-auto '. $regsearchclass . '">';
     echo '&nbsp;<input type="submit" class="btn btn-secondary" value="' . get_string('savesettings', 'data') . '" />';
+    echo '</div>';
+    echo '</div>';
+    echo '<div>';
 
     echo '<br />';
     echo '<div class="' . $advancedsearchclass . '" id="data_adv_form">';
@@ -1757,17 +1800,45 @@ function data_print_preference_form($data, $perpage, $search, $sort='', $order='
     $replacement = array();
 
     // Then we generate strings to replace for normal tags
+    $otherfields = [];
     foreach ($fields as $field) {
         $fieldname = $field->field->name;
         $fieldname = preg_quote($fieldname, '/');
-        $patterns[] = "/\[\[$fieldname\]\]/i";
         $searchfield = data_get_field_from_id($field->field->id, $data);
+
+        if ($searchfield->type === 'unknown') {
+            continue;
+        }
         if (!empty($search_array[$field->field->id]->data)) {
-            $replacement[] = $searchfield->display_search_field($search_array[$field->field->id]->data);
+            $searchinput = $searchfield->display_search_field($search_array[$field->field->id]->data);
         } else {
-            $replacement[] = $searchfield->display_search_field();
+            $searchinput = $searchfield->display_search_field();
+        }
+        $patterns[] = "/\[\[$fieldname\]\]/i";
+        $replacement[] = $searchinput;
+        // Extra field information.
+        $patterns[] = "/\[\[$fieldname#name\]\]/i";
+        $replacement[] = $field->field->name;
+        $patterns[] = "/\[\[$fieldname#description\]\]/i";
+        $replacement[] = $field->field->description;
+        // Other fields.
+        if (strpos($asearchtemplate, "[[" . $field->field->name . "]]") === false) {
+            $otherfields[] = [
+                'fieldname' => $searchfield->field->name,
+                'fieldcontent' => $searchinput,
+            ];
         }
     }
+    $patterns[] = "/##otherfields##/";
+    if (!empty($otherfields)) {
+        $replacement[] = $OUTPUT->render_from_template(
+            'mod_data/fields_otherfields',
+            ['fields' => $otherfields]
+        );
+    } else {
+        $replacement[] = '';
+    }
+
     $fn = !empty($search_array[DATA_FIRSTNAME]->data) ? $search_array[DATA_FIRSTNAME]->data : '';
     $ln = !empty($search_array[DATA_LASTNAME]->data) ? $search_array[DATA_LASTNAME]->data : '';
     $patterns[]    = '/##firstname##/';
@@ -1798,9 +1869,9 @@ function data_print_preference_form($data, $perpage, $search, $sort='', $order='
          '</td></tr>';
     echo '</table>';
     echo '</div>';
-    echo '</div>';
     echo '</form>';
     echo '</div>';
+    echo '<hr/>';
 }
 
 /**
@@ -2271,6 +2342,9 @@ function is_directory_a_preset($directory) {
 
 /**
  * Abstract class used for data preset importers
+ *
+ * @deprecated since Moodle 4.1 MDL-75140 - please do not use this class any more.
+ * @todo MDL-75189 Final deprecation in Moodle 4.5.
  */
 abstract class data_preset_importer {
 
@@ -2288,6 +2362,11 @@ abstract class data_preset_importer {
      * @param string $directory
      */
     public function __construct($course, $cm, $module, $directory) {
+        debugging(
+            'data_preset_importer is deprecated. Please use mod\\data\\local\\importer\\preset_importer instead',
+            DEBUG_DEVELOPER
+        );
+
         $this->course = $course;
         $this->cm = $cm;
         $this->module = $module;
@@ -2440,7 +2519,7 @@ abstract class data_preset_importer {
      * @return bool
      */
     function import($overwritesettings) {
-        global $DB, $CFG;
+        global $DB, $CFG, $OUTPUT;
 
         $params = $this->get_preset_settings();
         $settings = $params->settings;
@@ -2461,7 +2540,7 @@ abstract class data_preset_importer {
                 }
                 else $preservedfields[$cid] = true;
             }
-
+            $missingfieldtypes = [];
             foreach ($newfields as $nid => $newfield) {
                 $cid = optional_param("field_$nid", -1, PARAM_INT);
 
@@ -2478,7 +2557,12 @@ abstract class data_preset_importer {
                     unset($fieldobject);
                 } else {
                     /* Make a new field */
-                    include_once("field/$newfield->type/field.class.php");
+                    $filepath = "field/$newfield->type/field.class.php";
+                    if (!file_exists($filepath)) {
+                        $missingfieldtypes[] = $newfield->name;
+                        continue;
+                    }
+                    include_once($filepath);
 
                     if (!isset($newfield->description)) {
                         $newfield->description = '';
@@ -2489,20 +2573,20 @@ abstract class data_preset_importer {
                     unset($fieldclass);
                 }
             }
+            if (!empty($missingfieldtypes)) {
+                echo $OUTPUT->notification(get_string('missingfieldtypeimport', 'data') . html_writer::alist($missingfieldtypes));
+            }
         }
 
         /* Get rid of all old unused data */
-        if (!empty($preservedfields)) {
-            foreach ($currentfields as $cid => $currentfield) {
-                if (!array_key_exists($cid, $preservedfields)) {
-                    /* Data not used anymore so wipe! */
-                    print "Deleting field $currentfield->name<br />";
+        foreach ($currentfields as $cid => $currentfield) {
+            if (!array_key_exists($cid, $preservedfields)) {
+                /* Data not used anymore so wipe! */
+                echo "Deleting field $currentfield->name<br />";
 
-                    $id = $currentfield->id;
-                    //Why delete existing data records and related comments/ratings??
-                    $DB->delete_records('data_content', array('fieldid'=>$id));
-                    $DB->delete_records('data_fields', array('id'=>$id));
-                }
+                // Delete all information related to fields.
+                $todelete = data_get_field_from_id($currentfield->id, $this->module);
+                $todelete->delete_field();
             }
         }
 
@@ -2552,10 +2636,19 @@ abstract class data_preset_importer {
 
 /**
  * Data preset importer for uploaded presets
+ *
+ * @deprecated since Moodle 4.1 MDL-75140 - please do not use this class any more.
+ * @todo MDL-75189 Final deprecation in Moodle 4.5.
  */
 class data_preset_upload_importer extends data_preset_importer {
     public function __construct($course, $cm, $module, $filepath) {
         global $USER;
+
+        debugging(
+            'data_preset_upload_importer is deprecated. Please use mod\\data\\local\\importer\\preset_upload_importer instead',
+            DEBUG_DEVELOPER
+        );
+
         if (is_file($filepath)) {
             $fp = get_file_packer();
             if ($fp->extract_to_pathname($filepath, $filepath.'_extracted')) {
@@ -2565,6 +2658,7 @@ class data_preset_upload_importer extends data_preset_importer {
         }
         parent::__construct($course, $cm, $module, $filepath);
     }
+
     public function cleanup() {
         return fulldelete($this->directory);
     }
@@ -2572,11 +2666,20 @@ class data_preset_upload_importer extends data_preset_importer {
 
 /**
  * Data preset importer for existing presets
+ *
+ * @deprecated since Moodle 4.1 MDL-75140 - please do not use this class any more.
+ * @todo MDL-75189 Final deprecation in Moodle 4.5.
  */
 class data_preset_existing_importer extends data_preset_importer {
     protected $userid;
     public function __construct($course, $cm, $module, $fullname) {
         global $USER;
+
+        debugging(
+            'data_preset_existing_importer is deprecated. Please use mod\\data\\local\\importer\\preset_existing_importer instead',
+            DEBUG_DEVELOPER
+        );
+
         list($userid, $shortname) = explode('/', $fullname, 2);
         $context = context_module::instance($cm->id);
         if ($userid && ($userid != $USER->id) && !has_capability('mod/data:manageuserpresets', $context) && !has_capability('mod/data:viewalluserpresets', $context)) {
@@ -2623,7 +2726,7 @@ function data_preset_path($course, $userid, $shortname) {
  * Implementation of the function for printing the form elements that control
  * whether the course reset functionality affects the data.
  *
- * @param $mform form passed by reference
+ * @param MoodleQuickForm $mform form passed by reference
  */
 function data_reset_course_form_definition(&$mform) {
     $mform->addElement('header', 'dataheader', get_string('modulenameplural', 'data'));
@@ -2926,7 +3029,12 @@ function data_import_csv($cm, $data, &$csvdata, $encoding, $fielddelimiter) {
                     unset($fieldnames[$id]); // To ensure the user provided content fields remain in the array once flipped.
                 } else {
                     $field = $rawfields[$name];
-                    require_once("$CFG->dirroot/mod/data/field/$field->type/field.class.php");
+                    $filepath = "$CFG->dirroot/mod/data/field/$field->type/field.class.php";
+                    if (!file_exists($filepath)) {
+                        $errorfield .= "'$name' ";
+                        continue;
+                    }
+                    require_once($filepath);
                     $classname = 'data_field_' . $field->type;
                     $fields[$name] = new $classname($field, $data, $cm);
                 }
@@ -3450,11 +3558,11 @@ function data_extend_settings_navigation(settings_navigation $settings, navigati
             $defaultemplate = 'singletemplate';
         }
 
+        $datanode->add(get_string('presets', 'data'), new moodle_url('/mod/data/preset.php', array('d' => $data->id)));
         $datanode->add(get_string('fields', 'data'),
             new moodle_url('/mod/data/field.php', array('d' => $data->id)));
         $datanode->add(get_string('templates', 'data'),
             new moodle_url('/mod/data/templates.php', array('d' => $data->id)));
-        $datanode->add(get_string('presets', 'data'), new moodle_url('/mod/data/preset.php', array('d' => $data->id)));
     }
 
     if (!empty($CFG->enablerssfeeds) && !empty($CFG->data_enablerssfeeds) && $data->rssarticles > 0) {
@@ -3609,7 +3717,7 @@ function data_comment_validate($comment_param) {
 
     //check if approved
     if ($data->approval and !$record->approved and !data_isowner($record) and !has_capability('mod/data:approve', $context)) {
-        throw new comment_exception('notapproved', 'data');
+        throw new comment_exception('notapprovederror', 'data');
     }
 
     // group access
@@ -3851,7 +3959,8 @@ function data_get_advanced_search_sql($sort, $data, $recordids, $selectdata, $so
 
     // Find the field we are sorting on
     if ($sort > 0 or data_get_field_from_id($sort, $data)) {
-        $selectdata .= ' AND c.fieldid = :sort';
+        $selectdata .= ' AND c.fieldid = :sort AND s.recordid = r.id';
+        $nestselectsql .= ',{data_content} s ';
     }
 
     // If there are no record IDs then return an sql statment that will return no rows.

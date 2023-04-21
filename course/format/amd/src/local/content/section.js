@@ -51,6 +51,7 @@ export default class extends DndSection {
             HASDESCRIPTION: 'description',
             HIDE: 'd-none',
             HIDDEN: 'hidden',
+            CURRENT: 'current',
         };
 
         // We need our id to watch specific events.
@@ -130,6 +131,7 @@ export default class extends DndSection {
         this.element.classList.toggle(this.classes.DRAGGING, element.dragging ?? false);
         this.element.classList.toggle(this.classes.LOCKED, element.locked ?? false);
         this.element.classList.toggle(this.classes.HIDDEN, !element.visible ?? false);
+        this.element.classList.toggle(this.classes.CURRENT, element.current ?? false);
         this.locked = element.locked;
         // The description box classes depends on the section state.
         const sectioninfo = this.getElement(this.selectors.SECTIONINFO);
@@ -148,10 +150,10 @@ export default class extends DndSection {
      */
     _updateBadges(section) {
         const current = this.getElement(`${this.selectors.SECTIONBADGES} [data-type='iscurrent']`);
-        current.classList.toggle(this.classes.HIDE, !section.current);
+        current?.classList.toggle(this.classes.HIDE, !section.current);
 
         const hiddenFromStudents = this.getElement(`${this.selectors.SECTIONBADGES} [data-type='hiddenfromstudents']`);
-        hiddenFromStudents.classList.toggle(this.classes.HIDE, section.visible);
+        hiddenFromStudents?.classList.toggle(this.classes.HIDE, section.visible);
     }
 
     /**

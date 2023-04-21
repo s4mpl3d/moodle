@@ -470,6 +470,7 @@ class lib_test extends \advanced_testcase {
 
         list($bbactivitycontext, $bbactivitycm, $bbactivity) = $this->create_instance();
         $this->getDataGenerator()->enrol_user($user->id, $this->course->id);
+        $this->setUser($user);
 
         logger::log_meeting_joined_event(instance::get_from_instanceid($bbactivity->id), 0);
         $data->courseid = $this->get_course()->id;
@@ -535,6 +536,7 @@ class lib_test extends \advanced_testcase {
 
         list($bbactivitycontext, $bbactivitycm, $bbactivity) = $this->create_instance();
         $this->getDataGenerator()->enrol_user($user->id, $this->course->id);
+        $this->setUser($user);
         logger::log_meeting_joined_event(instance::get_from_instanceid($bbactivity->id), 0);
 
         $data->courseid = $this->get_course()->id;
@@ -695,5 +697,73 @@ class lib_test extends \advanced_testcase {
         $this->assertTrue(mod_bigbluebuttonbn_core_calendar_is_event_visible($event));
         $event->instance = 0;
         $this->assertFalse(mod_bigbluebuttonbn_core_calendar_is_event_visible($event));
+    }
+
+    /**
+     * Check the bigbluebuttonbn_pre_enable_plugin_actions function.
+     *
+     * @covers ::bigbluebuttonbn_pre_enable_plugin_actions
+     * @dataProvider bigbluebuttonbn_pre_enable_plugin_actions_provider
+     * @param bool $initialstate
+     * @param bool $expected
+     * @param int $notificationcount
+     */
+    public function test_bigbluebuttonbn_pre_enable_plugin_actions(
+        ?bool $initialstate,
+        bool $expected,
+        int $notificationcount
+    ): void {
+        $this->resetAfterTest(true);
+
+        set_config('bigbluebuttonbn_default_dpa_accepted', $initialstate);
+
+        $this->assertEquals($expected, bigbluebuttonbn_pre_enable_plugin_actions());
+        $this->assertCount($notificationcount, \core\notification::fetch());
+    }
+
+    /**
+     * Check the bigbluebuttonbn_pre_enable_plugin_actions function.
+     *
+     * @covers ::bigbluebuttonbn_pre_enable_plugin_actions
+     * @dataProvider bigbluebuttonbn_pre_enable_plugin_actions_provider
+     * @param bool $initialstate
+     * @param bool $expected
+     * @param int $notificationcount
+     */
+    public function test_enable_plugin(
+        ?bool $initialstate,
+        bool $expected,
+        int $notificationcount
+    ): void {
+        $this->resetAfterTest(true);
+
+        set_config('bigbluebuttonbn_default_dpa_accepted', $initialstate);
+        $this->assertEquals($expected, \core\plugininfo\mod::enable_plugin('bigbluebuttonbn', 1));
+        $this->assertCount($notificationcount, \core\notification::fetch());
+    }
+
+    /**
+     * Data provider for bigbluebuttonbn_pre_enable_plugin_actions tests.
+     *
+     * @return array
+     */
+    public function bigbluebuttonbn_pre_enable_plugin_actions_provider(): array {
+        return [
+            'Initially unset' => [
+                null,
+                false,
+                1,
+            ],
+            'Set to false' => [
+                false,
+                false,
+                1,
+            ],
+            'Initially set' => [
+                true,
+                true,
+                0,
+            ],
+        ];
     }
 }

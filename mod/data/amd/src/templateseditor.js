@@ -25,14 +25,16 @@ import {get_string as getString} from 'core/str';
 import {prefetchStrings} from 'core/prefetch';
 import {relativeUrl} from 'core/url';
 import {saveCancel} from 'core/notification';
+import Templates from 'core/templates';
 
 prefetchStrings('admin', ['confirmation']);
 prefetchStrings('mod_data', [
     'resettemplateconfirmtitle',
-    'resettemplateconfirm',
-    'resettemplate',
     'enabletemplateeditorcheck',
     'editorenable'
+]);
+prefetchStrings('core', [
+    'reset',
 ]);
 
 /**
@@ -40,37 +42,46 @@ prefetchStrings('mod_data', [
  */
 const selectors = {
     toggleTemplateEditor: 'input[name="useeditor"]',
+    resetTemplateAction: '[data-action="resettemplate"]',
     resetTemplate: 'input[name="defaultform"]',
-    resetButton: 'input[name="resetbutton"]',
+    resetAllTemplates: 'input[name="resetall"]',
+    resetAllCheck: 'input[name="resetallcheck"]',
     editForm: '#edittemplateform',
 };
 
 /**
  * Register event listeners for the module.
  *
- * @param {int} instanceId The database ID
+ * @param {Number} instanceId The database ID
  * @param {string} mode The template mode
  */
 const registerEventListeners = (instanceId, mode) => {
-    registerResetButton();
+    registerResetButton(mode);
     registerEditorToggler(instanceId, mode);
 };
 
-const registerResetButton = () => {
+const registerResetButton = (mode) => {
     const editForm = document.querySelector(selectors.editForm);
-    const resetButton = document.querySelector(selectors.resetButton);
     const resetTemplate = document.querySelector(selectors.resetTemplate);
+    const resetAllTemplates = document.querySelector(selectors.resetAllTemplates);
+    const resetTemplateAction = document.querySelector(selectors.resetTemplateAction);
 
-    if (!resetButton || !resetTemplate || !editForm) {
+    if (!resetTemplateAction || !resetTemplate || !editForm) {
         return;
     }
-
-    resetButton.addEventListener('click', async(event) => {
+    prefetchStrings('mod_data', [
+        mode
+    ]);
+    resetTemplateAction.addEventListener('click', async(event) => {
         event.preventDefault();
+        const params = {
+            resetallname: "resetallcheck",
+            templatename: await getString(mode, 'mod_data'),
+        };
         saveCancel(
             getString('resettemplateconfirmtitle', 'mod_data'),
-            getString('resettemplateconfirm', 'mod_data'),
-            getString('resettemplate', 'mod_data'),
+            Templates.render('mod_data/template_editor_resetmodal', params),
+            getString('reset', 'core'),
             () => {
                 resetTemplate.value = "true";
                 editForm.submit();
@@ -78,6 +89,16 @@ const registerResetButton = () => {
             null,
             {triggerElement: event.target}
         );
+    });
+
+    // The reset all checkbox is inside a modal so we need to capture at document level.
+    if (!resetAllTemplates) {
+        return;
+    }
+    document.addEventListener('change', (event) => {
+        if (event.target.matches(selectors.resetAllCheck)) {
+            resetAllTemplates.value = (event.target.checked) ? "true" : "";
+        }
     });
 };
 

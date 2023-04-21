@@ -563,6 +563,21 @@ define('EMAIL_VIA_ALWAYS', 1);
  */
 define('EMAIL_VIA_NO_REPLY_ONLY', 2);
 
+/**
+ * Contact site support form/link disabled.
+ */
+define('CONTACT_SUPPORT_DISABLED', 0);
+
+/**
+ * Contact site support form/link only available to authenticated users.
+ */
+define('CONTACT_SUPPORT_AUTHENTICATED', 1);
+
+/**
+ * Contact site support form/link available to anyone visiting the site.
+ */
+define('CONTACT_SUPPORT_ANYONE', 2);
+
 // PARAMETER HANDLING.
 
 /**
@@ -1090,8 +1105,9 @@ function clean_param($param, $type) {
                 } else if (preg_match('/^' . preg_quote($CFG->wwwroot . '/', '/') . '/i', $param)) {
                     // Absolute, and matches our wwwroot.
                 } else {
+
                     // Relative - let's make sure there are no tricks.
-                    if (validateUrlSyntax('/' . $param, 's-u-P-a-p-f+q?r?')) {
+                    if (validateUrlSyntax('/' . $param, 's-u-P-a-p-f+q?r?') && !preg_match('/javascript:/i', $param)) {
                         // Looks ok.
                     } else {
                         $param = '';
@@ -2346,22 +2362,10 @@ function userdate_htmltime($date, $format = '', $timezone = 99, $fixday = true, 
  * @since Moodle 2.3.3
  */
 function date_format_string($date, $format, $tz = 99) {
-    global $CFG;
-
-    $localewincharset = null;
-    // Get the calendar type user is using.
-    if ($CFG->ostype == 'WINDOWS') {
-        $calendartype = \core_calendar\type_factory::get_calendar_instance();
-        $localewincharset = $calendartype->locale_win_charset();
-    }
-
-    if ($localewincharset) {
-        $format = core_text::convert($format, 'utf-8', $localewincharset);
-    }
 
     date_default_timezone_set(core_date::get_user_timezone($tz));
 
-    if (strftime('%p', 0) === strftime('%p', HOURSECS * 18)) {
+    if (date('A', 0) === date('A', HOURSECS * 18)) {
         $datearray = getdate($date);
         $format = str_replace([
             '%P',
@@ -2372,12 +2376,8 @@ function date_format_string($date, $format, $tz = 99) {
         ], $format);
     }
 
-    $datestring = strftime($format, $date);
+    $datestring = core_date::strftime($format, $date);
     core_date::set_default_server_timezone();
-
-    if ($localewincharset) {
-        $datestring = core_text::convert($datestring, $localewincharset, 'utf-8');
-    }
 
     return $datestring;
 }
@@ -2883,7 +2883,8 @@ function require_login($courseorid = null, $autologinguest = true, $cm = null, $
 
     // Check that the user has agreed to a site policy if there is one - do not test in case of admins.
     // Do not test if the script explicitly asked for skipping the site policies check.
-    if (!$USER->policyagreed && !is_siteadmin() && !NO_SITEPOLICY_CHECK) {
+    // Or if the user auth type is webservice.
+    if (!$USER->policyagreed && !is_siteadmin() && !NO_SITEPOLICY_CHECK && $USER->auth !== 'webservice') {
         $manager = new \core_privacy\local\sitepolicy\manager();
         if ($policyurl = $manager->get_redirect_url(isguestuser())) {
             if ($preventredirect) {
@@ -3396,6 +3397,11 @@ function update_user_login_times() {
 
     if (isguestuser()) {
         // Do not update guest access times/ips for performance.
+        return true;
+    }
+
+    if (defined('USER_KEY_LOGIN') && USER_KEY_LOGIN === true) {
+        // Do not update user login time when using user key login.
         return true;
     }
 
@@ -5208,6 +5214,7 @@ function remove_course_contents($courseid, $showfeedback = true, array $options 
                         // Delete cm and its context - orphaned contexts are purged in cron in case of any race condition.
                         context_helper::delete_instance(CONTEXT_MODULE, $cm->id);
                         $DB->delete_records('course_modules_completion', ['coursemoduleid' => $cm->id]);
+                        $DB->delete_records('course_modules_viewed', ['coursemoduleid' => $cm->id]);
                         $DB->delete_records('course_modules', array('id' => $cm->id));
                         rebuild_course_cache($cm->course, true);
                     }
@@ -5231,6 +5238,8 @@ function remove_course_contents($courseid, $showfeedback = true, array $options 
     // features are not enabled now, in case they were enabled previously.
     $DB->delete_records_subquery('course_modules_completion', 'coursemoduleid', 'id',
             'SELECT id from {course_modules} WHERE course = ?', [$courseid]);
+    $DB->delete_records_subquery('course_modules_viewed', 'coursemoduleid', 'id',
+        'SELECT id from {course_modules} WHERE course = ?', [$courseid]);
 
     // Remove course-module data that has not been removed in modules' _delete_instance callbacks.
     $cms = $DB->get_records('course_modules', array('course' => $course->id));
@@ -5896,7 +5905,7 @@ function email_should_be_diverted($email) {
 
     $patterns = array_map('trim', preg_split("/[\s,]+/", $CFG->divertallemailsexcept, -1, PREG_SPLIT_NO_EMPTY));
     foreach ($patterns as $pattern) {
-        if (preg_match("/$pattern/", $email)) {
+        if (preg_match("/{$pattern}/i", $email)) {
             return false;
         }
     }
@@ -6367,18 +6376,19 @@ function can_send_from_real_email_address($from, $user, $unused = null) {
  * @return string
  */
 function generate_email_signoff() {
-    global $CFG;
+    global $CFG, $OUTPUT;
 
     $signoff = "\n";
     if (!empty($CFG->supportname)) {
         $signoff .= $CFG->supportname."\n";
     }
-    if (!empty($CFG->supportemail)) {
-        $signoff .= $CFG->supportemail."\n";
+
+    $supportemail = $OUTPUT->supportemail(['class' => 'font-weight-bold']);
+
+    if ($supportemail) {
+        $signoff .= "\n" . $supportemail . "\n";
     }
-    if (!empty($CFG->supportpage)) {
-        $signoff .= $CFG->supportpage."\n";
-    }
+
     return $signoff;
 }
 
@@ -7139,6 +7149,39 @@ function current_language() {
 }
 
 /**
+ * Fix the current language to the given language code.
+ *
+ * @param string $lang The language code to use.
+ * @return void
+ */
+function fix_current_language(string $lang): void {
+    global $CFG, $COURSE, $SESSION, $USER;
+
+    if (!get_string_manager()->translation_exists($lang)) {
+        throw new coding_exception("The language pack for $lang is not available");
+    }
+
+    $fixglobal = '';
+    $fixlang = 'lang';
+    if (!empty($SESSION->forcelang)) {
+        $fixglobal = $SESSION;
+        $fixlang = 'forcelang';
+    } else if (!empty($COURSE->id) && $COURSE->id != SITEID && !empty($COURSE->lang)) {
+        $fixglobal = $COURSE;
+    } else if (!empty($SESSION->lang)) {
+        $fixglobal = $SESSION;
+    } else if (!empty($USER->lang)) {
+        $fixglobal = $USER;
+    } else if (isset($CFG->lang)) {
+        set_config('lang', $lang);
+    }
+
+    if ($fixglobal) {
+        $fixglobal->$fixlang = $lang;
+    }
+}
+
+/**
  * Returns parent language of current active language if defined
  *
  * @category string
@@ -7310,7 +7353,7 @@ function get_string_manager($forcereload=false) {
  *      usually expressed as the filename in the language pack without the
  *      .php on the end but can also be written as mod/forum or grade/export/xls.
  *      If none is specified then moodle.php is used.
- * @param string|object|array $a An object, string or number that can be used
+ * @param string|object|array|int $a An object, string or number that can be used
  *      within translation strings
  * @param bool $lazyload If set to true a string object is returned instead of
  *      the string itself. The string then isn't calculated until it is first used.
@@ -7560,7 +7603,7 @@ class emoticon_manager {
      *
      * @see self::encode_stored_config()
      * @param string $encoded
-     * @return string|null
+     * @return array|null
      */
     public function decode_stored_config($encoded) {
         $decoded = json_decode($encoded);
@@ -7798,9 +7841,12 @@ function get_plugins_with_function($function, $file = 'lib.php', $include = true
     $cache = \cache::make('core', 'plugin_functions');
 
     // Including both although I doubt that we will find two functions definitions with the same name.
-    // Clearning the filename as cache_helper::hash_key only allows a-zA-Z0-9_.
-    $key = $function . '_' . clean_param($file, PARAM_ALPHA);
-    $pluginfunctions = $cache->get($key);
+    // Clean the filename as cache_helper::hash_key only allows a-zA-Z0-9_.
+    $pluginfunctions = false;
+    if (!empty($CFG->allversionshash)) {
+        $key = $CFG->allversionshash . '_' . $function . '_' . clean_param($file, PARAM_ALPHA);
+        $pluginfunctions = $cache->get($key);
+    }
     $dirty = false;
 
     // Use the plugin manager to check that plugins are currently installed.
@@ -7889,7 +7935,9 @@ function get_plugins_with_function($function, $file = 'lib.php', $include = true
 
         }
     }
-    $cache->set($key, $pluginfunctions);
+    if (!empty($CFG->allversionshash)) {
+        $cache->set($key, $pluginfunctions);
+    }
 
     return $pluginfunctions;
 
@@ -8183,10 +8231,23 @@ function check_php_version($version='5.2.4') {
  * Checks version numbers of main code and all plugins to see
  * if there are any mismatches.
  *
+ * @param bool $checkupgradeflag check the outagelessupgrade flag to see if an upgrade is running.
  * @return bool
  */
-function moodle_needs_upgrading() {
-    global $CFG;
+function moodle_needs_upgrading($checkupgradeflag = true) {
+    global $CFG, $DB;
+
+    // Say no if there is already an upgrade running.
+    if ($checkupgradeflag) {
+        $lock = $DB->get_field('config', 'value', ['name' => 'outagelessupgrade']);
+        $currentprocessrunningupgrade = (defined('CLI_UPGRADE_RUNNING') && CLI_UPGRADE_RUNNING);
+        // If we ARE locked, but this PHP process is NOT the process running the upgrade,
+        // We should always return false.
+        // This means the upgrade is running from CLI somewhere, or about to.
+        if (!empty($lock) && !$currentprocessrunningupgrade) {
+            return false;
+        }
+    }
 
     if (empty($CFG->version)) {
         return true;
@@ -8343,7 +8404,7 @@ function count_words($string) {
                 </                              # Start of close tag.
                 (?!                             # Do not match any of these specific close tag names.
                     a> | b> | del> | em> | i> |
-                    ins> | s> | small> |
+                    ins> | s> | small> | span> |
                     strong> | sub> | sup> | u>
                 )
                 \w+                             # But, apart from those execptions, match any tag name.
@@ -8355,7 +8416,7 @@ function count_words($string) {
     // Now remove HTML tags.
     $string = strip_tags($string);
     // Decode HTML entities.
-    $string = html_entity_decode($string);
+    $string = html_entity_decode($string, ENT_COMPAT);
 
     // Now, the word count is the number of blocks of characters separated
     // by any sort of space. That seems to be the definition used by all other systems.
@@ -8377,7 +8438,7 @@ function count_words($string) {
  */
 function count_letters($string) {
     $string = strip_tags($string); // Tags are out now.
-    $string = html_entity_decode($string);
+    $string = html_entity_decode($string, ENT_COMPAT);
     $string = preg_replace('/[[:space:]]*/', '', $string); // Whitespace are out now.
 
     return core_text::strlen($string);
@@ -9249,6 +9310,25 @@ function mtrace($string, $eol="\n", $sleep=0) {
 }
 
 /**
+ * Helper to {@see mtrace()} an exception or throwable, including all relevant information.
+ *
+ * @param Throwable $e the error to ouptput.
+ */
+function mtrace_exception(Throwable $e): void {
+    $info = get_exception_info($e);
+
+    $message = $info->message;
+    if ($info->debuginfo) {
+        $message .= "\n\n" . $info->debuginfo;
+    }
+    if ($info->backtrace) {
+        $message .= "\n\n" . format_backtrace($info->backtrace, true);
+    }
+
+    mtrace($message);
+}
+
+/**
  * Replace 1 or more slashes or backslashes to 1 slash
  *
  * @param string $path The path to strip
@@ -10003,7 +10083,7 @@ function remove_dir($dir, $contentonly=false) {
  * Detect if an object or a class contains a given property
  * will take an actual object or the name of a class
  *
- * @param mix $obj Name of class or real object to test
+ * @param mixed $obj Name of class or real object to test
  * @param string $property name of property to find
  * @return bool true if property exists
  */
@@ -10655,7 +10735,7 @@ class lang_string {
      *
      * @param string $identifier The strings identifier
      * @param string $component The strings component
-     * @param stdClass|array $a Any arguments the string requires
+     * @param stdClass|array|mixed $a Any arguments the string requires
      * @param string $lang The language to use when processing the string.
      * @throws coding_exception
      */

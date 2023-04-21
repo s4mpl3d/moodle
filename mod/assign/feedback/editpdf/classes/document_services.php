@@ -91,7 +91,7 @@ EOD;
      * This function will take an int or an assignment instance and
      * return an assignment instance. It is just for convenience.
      * @param int|\assign $assignment
-     * @return assign
+     * @return \assign
      */
     private static function get_assignment_from_param($assignment) {
         global $CFG;
@@ -642,9 +642,10 @@ EOD;
      * @param int|\assign $assignment
      * @param int $userid
      * @param int $attemptnumber (-1 means latest attempt)
-     * @return stored_file
+     * @return \stored_file
      */
     public static function generate_feedback_document($assignment, $userid, $attemptnumber) {
+        global $CFG;
 
         $assignment = self::get_assignment_from_param($assignment);
 
@@ -673,6 +674,20 @@ EOD;
         $file->copy_content_to($combined); // Copy the file.
 
         $pdf = new pdf();
+
+        // Set fontname from course setting if it's enabled.
+        if (!empty($CFG->enablepdfexportfont)) {
+            $fontlist = $pdf->get_export_fontlist();
+            // Load font from course if it's more than 1.
+            if (count($fontlist) > 1) {
+                $course = $assignment->get_course();
+                if (!empty($course->pdfexportfont)) {
+                    $pdf->set_export_font_name($course->pdfexportfont);
+                }
+            } else {
+                $pdf->set_export_font_name(current($fontlist));
+            }
+        }
 
         $fs = get_file_storage();
         $stamptmpdir = make_temp_directory('assignfeedback_editpdf/stamps/' . self::hash($assignment, $userid, $attemptnumber));
@@ -811,7 +826,7 @@ EOD;
      * @param int|\assign $assignment
      * @param int $userid
      * @param int $attemptnumber (-1 means latest attempt)
-     * @return stored_file
+     * @return \stored_file
      */
     public static function get_feedback_document($assignment, $userid, $attemptnumber) {
 
@@ -920,10 +935,13 @@ EOD;
         $oldfile = $fs->get_file($record->contextid, $record->component, $record->filearea,
             $record->itemid, $record->filepath, $record->filename);
 
-        $newhash = sha1($newfilepath);
-
-        // Delete old file if exists.
-        if ($oldfile && $newhash !== $oldfile->get_contenthash()) {
+        if ($oldfile) {
+            $newhash = \file_storage::hash_from_path($newfilepath);
+            if ($newhash === $oldfile->get_contenthash()) {
+                // Use existing file if contenthash match.
+                return $oldfile;
+            }
+            // Delete existing file.
             $oldfile->delete();
         }
 

@@ -35,14 +35,13 @@ class state_test extends \advanced_testcase {
         require_once($CFG->dirroot . '/course/lib.php');
         require_once($CFG->dirroot . '/course/format/tests/fixtures/format_theunittest.php');
         require_once($CFG->dirroot . '/course/format/tests/fixtures/format_theunittest_output_course_format_state.php');
-        require_once($CFG->dirroot . '/lib/externallib.php');
     }
 
     /**
      * Test the behaviour of state::export_for_template().
      *
      * @dataProvider state_provider
-     * @coversDefaultClass \core_courseformat\output\local\state
+     * @covers \core_courseformat\output\local\state
      *
      * @param string $format The course format of the course where the method will be executed.
      */

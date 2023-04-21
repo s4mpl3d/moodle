@@ -301,6 +301,38 @@ class manager {
         return new template($this, $templatecontent, $options);
     }
 
+    /** Check if the user can manage templates on the current context.
+     *
+     * @param int $userid the user id to check ($USER->id if null).
+     * @return bool if the user can manage templates on current context.
+     */
+    public function can_manage_templates(?int $userid = null): bool {
+        global $USER;
+        if (!$userid) {
+            $userid = $USER->id;
+        }
+        return has_capability('mod/data:managetemplates', $this->context, $userid);
+    }
+
+    /** Check if the user can export entries on the current context.
+     *
+     * @param int $userid the user id to check ($USER->id if null).
+     * @return bool if the user can export entries on current context.
+     */
+    public function can_export_entries(?int $userid = null): bool {
+        global $USER, $DB;
+
+        if (!$userid) {
+            $userid = $USER->id;
+        }
+
+        // Exportallentries and exportentry are basically the same capability.
+        return has_capability('mod/data:exportallentries', $this->context) ||
+                has_capability('mod/data:exportentry', $this->context) ||
+                (has_capability('mod/data:exportownentry', $this->context) &&
+                $DB->record_exists('data_records', ['userid' => $userid, 'dataid' => $this->instance->id]));
+    }
+
     /**
      * Update the database templates.
      *
@@ -338,6 +370,39 @@ class manager {
         $event->trigger();
 
         return true;
+    }
+
+    /**
+     * Reset all templates.
+     *
+     * @return bool if the reset is done or not
+     */
+    public function reset_all_templates(): bool {
+        $newtemplates = new stdClass();
+        foreach (self::TEMPLATES_LIST as $templatename => $templatefile) {
+            $newtemplates->{$templatename} = '';
+        }
+        return $this->update_templates($newtemplates);
+    }
+
+    /**
+     * Reset all templates related to a specific template.
+     *
+     * @param string $templatename the template name
+     * @return bool if the reset is done or not
+     */
+    public function reset_template(string $templatename): bool {
+        $newtemplates = new stdClass();
+        // Reset the template to default.
+        $newtemplates->{$templatename} = '';
+        if ($templatename == 'listtemplate') {
+            $newtemplates->listtemplateheader = '';
+            $newtemplates->listtemplatefooter = '';
+        }
+        if ($templatename == 'rsstemplate') {
+            $newtemplates->rsstitletemplate = '';
+        }
+        return $this->update_templates($newtemplates);
     }
 
     /** Check if the user can view a specific preset.

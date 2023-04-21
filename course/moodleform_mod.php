@@ -197,7 +197,6 @@ abstract class moodleform_mod extends moodleform {
         return $this->_features;
     }
 
-
     protected function init_features() {
         global $CFG;
 
@@ -213,6 +212,7 @@ abstract class moodleform_mod extends moodleform {
         $this->_features->showdescription   = plugin_supports('mod', $this->_modname, FEATURE_SHOW_DESCRIPTION, false);
         $this->_features->gradecat          = ($this->_features->outcomes or $this->_features->hasgrades);
         $this->_features->advancedgrading   = plugin_supports('mod', $this->_modname, FEATURE_ADVANCED_GRADING, false);
+        $this->_features->hasnoview         = plugin_supports('mod', $this->_modname, FEATURE_NO_VIEW_LINK, false);
         $this->_features->canrescale = (component_callback_exists('mod_' . $this->_modname, 'rescale_activity_grades') !== false);
     }
 
@@ -613,7 +613,10 @@ abstract class moodleform_mod extends moodleform {
         $mform->addElement('header', 'modstandardelshdr', get_string('modstandardels', 'form'));
 
         $section = get_fast_modinfo($COURSE)->get_section_info($this->_section);
-        $allowstealth = !empty($CFG->allowstealth) && $this->courseformat->allow_stealth_module_visibility($this->_cm, $section);
+        $allowstealth =
+            !empty($CFG->allowstealth) &&
+            $this->courseformat->allow_stealth_module_visibility($this->_cm, $section) &&
+            !$this->_features->hasnoview;
         if ($allowstealth && $section->visible) {
             $modvisiblelabel = 'modvisiblewithstealth';
         } else if ($section->visible) {
@@ -1058,6 +1061,9 @@ abstract class moodleform_mod extends moodleform {
 
         $mform->addElement('hidden', 'sr', 0);
         $mform->setType('sr', PARAM_INT);
+
+        $mform->addElement('hidden', 'beforemod', 0);
+        $mform->setType('beforemod', PARAM_INT);
     }
 
     public function standard_grading_coursemodule_elements() {
